@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>피아노 초견 마스터</title>
+    <!-- VexFlow 라이브러리 (악보 렌더링용) -->
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+    <!-- Tone.js 라이브러리 (피아노 오디오 재생용) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f5f5f7;
+            margin: 0;
+            padding: 20px;
+            touch-action: manipulation;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button, select {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: #007aff;
+            color: white;
+            font-weight: bold;
+        }
+        select {
+            background-color: #fff;
+            color: #333;
+            border: 2px solid #007aff;
+        }
+        .stats {
+            display: flex;
+            gap: 30px;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #score { color: #34c759; }
+        #message {
+            height: 24px;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #ff3b30;
+        }
+        #staff-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+        /* 피아노 건반 CSS */
+        .piano {
+            display: flex;
+            position: relative;
+            height: 200px;
+            background: #333;
+            padding: 10px 10px 0 10px;
+            border-radius: 10px 10px 0 0;
+            overflow-x: auto; 
+            max-width: 100%; 
+            box-sizing: border-box; 
+        }
+        .key {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            flex-shrink: 0; 
+        }
+        .key.white {
+            width: 40px;
+            height: 200px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 0 0 5px 5px;
+            z-index: 1;
+            color: #333;
+        }
+        .key.white:active, .key.white.active {
+            background: #e0e0e0;
+        }
+        .key.black {
+            width: 28px;
+            height: 120px;
+            background: black;
+            margin-left: -14px;
+            margin-right: -14px;
+            z-index: 2;
+            border-radius: 0 0 5px 5px;
+            color: white;
+            font-size: 12px;
+            padding-bottom: 10px;
+        }
+        .key.black:active, .key.black.active {
+            background: #333;
+        }
+        .key.correct {
+            background-color: #d4edda !important; 
+            border-color: #28a745 !important;
+        }
+        .key.incorrect {
+            background-color: #f8d7da !important; 
+            border-color: #dc3545 !important;
+        }
+        .key.target-note {
+            background-color: #add8e6 !important; 
+            border-color: #007bff !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🎹 피아노 초견 게임</h1>
+    </div>
+
+    <div class="controls">
+        <select id="hand-select">
+            <option value="bass">왼손 (낮음자리표)</option>
+            <option value="treble">오른손 (높음자리표)</option>
+        </select>
+        <select id="level-select">
+            <option value="1">단계 1</option>
+            <option value="2">단계 2</option>
+            <option value="3">단계 3</option>
+            <option value="4">단계 4</option>
+            <option value="5">단계 5</option>
+        </select>
+        <button onclick="startGame()">게임 시작 / 초기화</button>
+        <button onclick="retryQuestion()">문제 다시 풀기</button>
+    </div>
+
+    <div class="stats">
+        <div>단계: <span id="level-display">1</span> / 5</div>
+        <div>정답 수: <span id="score-display">0</span> / 5</div>
+    </div>
+
+    <div id="message"></div>
+
+    <div id="staff-container"></div>
+    <div id="piano-container" class="piano"></div>
+
+    <script>
+        // --- 오디오 (Tone.js) 설정 ---
+        // 실제 피아노 샘플 오디오를 불러옵니다.
+        const piano = new Tone.Sampler({
+            urls: {
+                "C2": "C2.mp3",
+                "C3": "C3.mp3",
+                "C4": "C4.mp3",
+                "C5": "C5.mp3",
+                "C6": "C6.mp3"
+            },
+            release: 1,
+            baseUrl: "https://tonejs.github.io/audio/salamander/"
+        }).toDestination();
+
+        // 건반을 누를 때 소리를 재생하는 함수
+        async function playNoteSound(vexNote) {
+            // 브라우저 정책상 사용자의 첫 클릭/터치가 있을 때 오디오 컨텍스트를 활성화해야 합니다.
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+            }
+            if (piano.loaded) {
+                // VexFlow의 악보 포맷('c#/4')을 Tone.js 재생 포맷('C#4')으로 변환
+                const toneNote = vexNote.replace('/', '').toUpperCase();
+                // 오디오 재생 (8분음표 길이만큼)
+                piano.triggerAttackRelease(toneNote, "8n");
+            }
+        }
+        // -----------------------------
+
+        const VF = Vex.Flow;
+        let currentHand = 'bass';
+        let currentLevel = 1;
+        let score = 0;
+
+        let targetNotes = [];
+        let currentInputIndex = 0;
+        let hasMadeMistakeOnCurrentQuestion = false;
+
+        const notesData = {
+            treble: ['c/4','c#/4','d/4','d#/4','e/4','f/4','f#/4','g/4','g#/4','a/4','a#/4','b/4',
+                     'c/5','c#/5','d/5','d#/5','e/5','f/5','f#/5','g/5','g#/5','a/5','a#/5','b/5',
+                     'c/6','c#/6','d/6'],
+            bass:   ['a/1','a#/1','b/1',
+                     'c/2','c#/2','d/2','d#/2','e/2','f/2','f#/2','g/2','g#/2','a/2','a#/2','b/2',
+                     'c/3','c#/3','d/3','d#/3','e/3','f/3','f#/3','g/3','a/3']
+        };
+
+        const keyboardToNoteMaps = {
+            treble: {
+                'a': 'c/4', 'w': 'c#/4', 's': 'd/4', 'e': 'd#/4',
+                'f': 'f/4', 't': 'f#/4', 'g': 'g/4', 'y': 'g#/4', 'h': 'a/4', 'u': 'a#/4', 'j': 'b/4',
+                'k': 'c/5'
+            },
+            bass: {
+                'z': 'c/2', 's': 'c#/2', 'x': 'd/2', 'd': 'd#/2', 'c': 'e/2',
+                'v': 'f/2', 'g': 'f#/2', 'b': 'g/2', 'h': 'g#/2', 'n': 'a/2', 'j': 'a#/2', 'm': 'b/2',
+                ',': 'c/3'
+            }
+        };
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            let note = null;
+
+            if (currentHand === 'treble' && keyboardToNoteMaps.treble[key]) {
+                note = keyboardToNoteMaps.treble[key];
+            } else if (currentHand === 'bass' && keyboardToNoteMaps.bass[key]) {
+                note = keyboardToNoteMaps.bass[key];
+            }
+
+            if (note) {
+                event.preventDefault(); 
+                handleKeyPress(note);
+            }
+        });
+
+        function clearAllKeyFeedback() {
+            document.querySelectorAll('.key').forEach(key => {
+                key.classList.remove('active', 'correct', 'incorrect', 'target-note');
+            });
+        }
+
+        function buildPiano() {
+            const container = document.getElementById('piano-container');
+            container.innerHTML = '';
+            const notes = notesData[currentHand];
+
+            notes.forEach(note => {
+                const key = document.createElement('div');
+                const isBlack = note.includes('#');
+                key.className = `key ${isBlack ? 'black' : 'white'}`;
+                key.dataset.note = note;
+
+                key.innerText = note.split('/')[0].toUpperCase();
+
+                const pressHandler = (e) => {
+                    e.preventDefault(); 
+                    handleKeyPress(note);
+                };
+                
+                key.addEventListener('mousedown', pressHandler);
+                key.addEventListener('touchstart', pressHandler, {passive: false});
+                
+                container.appendChild(key);
+            });
+        }
+
+        function getRandomNote(includeBlack = false) {
+            const notes = notesData[currentHand];
+            let pool = notes;
+            if (!includeBlack) {
+                pool = notes.filter(n => !n.includes('#'));
+            }
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        function generateQuestion() {
+            currentInputIndex = 0;
+            targetNotes = [];
+            hasMadeMistakeOnCurrentQuestion = false; 
+            let vexNotes = [];
+
+            clearAllKeyFeedback(); 
+            clearMessage(); 
+
+            if (currentLevel === 1) {
+                const note = getRandomNote(false);
+                targetNotes = [note];
+                vexNotes = [createVexNote([note])];
+            }
+            else if (currentLevel === 2) {
+                const note = getRandomNote(true);
+                targetNotes = [note];
+                vexNotes = [createVexNote([note])];
+            }
+            else if (currentLevel === 3) {
+                targetNotes = [getRandomNote(true), getRandomNote(true), getRandomNote(true)];
+                vexNotes = targetNotes.map(n => createVexNote([n]));
+            }
+            else if (currentLevel === 4) {
+                const count = 2; 
+                let chord = [];
+                for(let i=0; i<count; i++) {
+                    chord.push(getRandomNote(true)); 
+                }
+                chord.sort((a, b) => notesData[currentHand].indexOf(a) - notesData[currentHand].indexOf(b));
+                chord = [...new Set(chord)];
+                targetNotes = [...chord];
+                vexNotes = [createVexNote(chord)];
+            }
+            else if (currentLevel === 5) {
+                const count = 3; 
+                let chord = [];
+                for(let i=0; i<count; i++) {
+                    chord.push(getRandomNote(true)); 
+                }
+                chord.sort((a, b) => notesData[currentHand].indexOf(a) - notesData[currentHand].indexOf(b));
+                chord = [...new Set(chord)];
+                targetNotes = [...chord];
+                vexNotes = [createVexNote(chord)];
+            }
+
+            drawStaff(vexNotes);
+        }
+
+        function createVexNote(keys) {
+            const staveNote = new VF.StaveNote({
+                clef: currentHand,
+                keys: keys,
+                duration: "q"
+            });
+
+            keys.forEach((key, index) => {
+                if (key.includes('#')) {
+                    staveNote.addModifier(new VF.Accidental("#"), index);
+                }
+            });
+            return staveNote;
+        }
+
+        function drawStaff(notes) {
+            const container = document.getElementById('staff-container');
+            container.innerHTML = '';
+
+            const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+            const containerWidth = Math.min(window.innerWidth - 80, 400);
+            renderer.resize(containerWidth, 150);
+            const context = renderer.getContext();
+
+            const stave = new VF.Stave(10, 20, containerWidth - 20);
+            stave.addClef(currentHand).setContext(context).draw();
+
+            const voice = new VF.Voice({num_beats: notes.length,  beat_value: 4});
+            voice.addTickables(notes);
+
+            new VF.Formatter().joinVoices([voice]).format([voice], containerWidth - 100);
+            voice.draw(context, stave);
+        }
+
+        function showMessage(text, isError = false) {
+            const msgDiv = document.getElementById('message');
+            msgDiv.innerText = text;
+            msgDiv.style.color = isError ? '#ff3b30' : '#34c759';
+        }
+
+        function clearMessage() {
+            document.getElementById('message').innerText = '';
+        }
+
+        function updateStats() {
+            document.getElementById('level-display').innerText = currentLevel;
+            document.getElementById('score-display').innerText = score;
+        }
+
+        function handleKeyPress(note) {
+            // ⭐ 건반을 누를 때마다 소리를 재생하도록 호출합니다.
+            playNoteSound(note);
+
+            const inputKeyEl = document.querySelector(`[data-note="${note}"]`);
+            if (inputKeyEl) {
+                inputKeyEl.classList.add('active');
+                setTimeout(() => inputKeyEl.classList.remove('active'), 100); 
+            }
+
+            const expectedNote = targetNotes[currentInputIndex];
+
+            if (note === expectedNote) {
+                currentInputIndex++;
+                if (inputKeyEl) {
+                    inputKeyEl.classList.remove('incorrect', 'target-note'); 
+                    inputKeyEl.classList.add('correct');
+                    if (currentInputIndex < targetNotes.length) {
+                        setTimeout(() => inputKeyEl.classList.remove('correct'), 500); 
+                    }
+                }
+
+                if (currentInputIndex === targetNotes.length) { 
+                    if (!hasMadeMistakeOnCurrentQuestion) {
+                        score++;
+                    }
+                    showMessage('정답입니다! 🎯');
+
+                    if (score >= 5) {
+                        if (currentLevel < 5) {
+                            currentLevel++;
+                            score = 0;
+                            document.getElementById('level-select').value = currentLevel; 
+                            showMessage(`축하합니다! ${currentLevel}단계로 넘어갑니다! 🎉`);
+                        } else {
+                            showMessage('모든 단계를 마스터했습니다! 최고예요! 🏆');
+                        }
+                    }
+                    updateStats();
+                    generateQuestion();
+                }
+            } else { 
+                hasMadeMistakeOnCurrentQuestion = true; 
+                updateStats();
+
+                if (inputKeyEl) {
+                    inputKeyEl.classList.remove('correct', 'target-note'); 
+                    inputKeyEl.classList.add('incorrect'); 
+                }
+                
+                if (currentLevel >= 3) {
+                    targetNotes.forEach(tn => {
+                        const targetKeyEl = document.querySelector(`[data-note="${tn}"]`);
+                        if (targetKeyEl) {
+                            targetKeyEl.classList.add('target-note'); 
+                        }
+                    });
+                }
+
+                const answerNames = targetNotes.map(n => n.split('/')[0].toUpperCase());
+                showMessage(`오답! 정답은 [ ${answerNames.join(', ')} ] 입니다. 다시 시도해 보세요.`, true);
+
+                setTimeout(() => {
+                    retryQuestion(); 
+                    showMessage('다시 시도해주세요.', true); 
+                }, 2500);
+            }
+        }
+
+        function retryQuestion() {
+            currentInputIndex = 0; 
+            hasMadeMistakeOnCurrentQuestion = false; 
+            clearAllKeyFeedback(); 
+            clearMessage(); 
+
+            let vexNotesToRedraw;
+            if (currentLevel >= 4) { 
+                vexNotesToRedraw = [createVexNote(targetNotes)];
+            } else { 
+                vexNotesToRedraw = targetNotes.map(n => createVexNote([n]));
+            }
+            drawStaff(vexNotesToRedraw);
+            showMessage('문제를 다시 시작합니다!', false);
+        }
+
+        function startGame() {
+            // 오디오 권한을 얻기 위해 게임 시작 시 오디오 컨텍스트를 미리 열어둡니다.
+            Tone.start();
+            
+            currentHand = document.getElementById('hand-select').value;
+            currentLevel = parseInt(document.getElementById('level-select').value); 
+            score = 0;
+            updateStats();
+            buildPiano();
+            generateQuestion(); 
+            showMessage('게임을 시작합니다!', false);
+        }
+
+        window.addEventListener('resize', () => {
+            if(targetNotes.length > 0) retryQuestion();
+        });
+
+        startGame();
+    </script>
+</body>
+</html>
