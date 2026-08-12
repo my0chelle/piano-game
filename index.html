@@ -82,7 +82,7 @@
         .piano {
             display: flex;
             position: relative;
-            height: 160px; /* 200px에서 160px로 축소 */
+            height: 160px;
             background: #333;
             padding: 10px 10px 0 10px;
             border-radius: 10px 10px 0 0;
@@ -104,8 +104,8 @@
             flex-shrink: 0; 
         }
         .key.white {
-            width: 36px; /* 40px에서 36px로 축소 */
-            height: 150px; /* 200px에서 150px로 축소 */
+            width: 36px;
+            height: 150px;
             background: white;
             border: 1px solid #ccc;
             border-radius: 0 0 5px 5px;
@@ -116,8 +116,8 @@
             background: #e0e0e0;
         }
         .key.black {
-            width: 24px; /* 28px에서 24px로 축소 */
-            height: 90px; /* 120px에서 90px로 축소 */
+            width: 24px;
+            height: 90px;
             background: black;
             margin-left: -12px;
             margin-right: -12px;
@@ -265,13 +265,10 @@
 
                 key.innerText = note.split('/')[0].toUpperCase();
 
-                // 모바일 터치 및 마우스 클릭 대응 (스크롤을 방해하지 않도록 수정)
                 const pressHandler = (e) => {
-                    // e.preventDefault(); <-- 가로 스크롤을 위해 삭제
                     handleKeyPress(note);
                 };
                 
-                // pointerdown 이벤트를 사용하여 터치와 마우스를 한 번에 처리합니다.
                 key.addEventListener('pointerdown', pressHandler);
                 
                 container.appendChild(key);
@@ -407,47 +404,85 @@
                 }
 
                 if (currentInputIndex === targetNotes.length) { 
-                    if (!hasMade링크 연결까지 무사히 완료하셨다니 고지가 눈앞이네요! 
+                    if (!hasMadeMistakeOnCurrentQuestion) {
+                        score++;
+                    }
+                    showMessage('정답입니다! 🎯');
 
-말씀하신 문제는 화면 크기나 방향에 따라 UI를 맞출 때 정말 자주 겪는 레이아웃 이슈입니다. 건반(자식 요소)들의 전체 너비가 화면(부모 요소)보다 큰 상태인데 적절한 처리 속성이 없으면, 억지로 공간에 맞춰지면서 짤리거나 아예 스크롤이 막혀버리거든요.
+                    if (score >= 5) {
+                        if (currentLevel < 5) {
+                            currentLevel++;
+                            score = 0;
+                            document.getElementById('level-select').value = currentLevel; 
+                            showMessage(`축하합니다! ${currentLevel}단계로 넘어갑니다! 🎉`);
+                        } else {
+                            showMessage('모든 단계를 마스터했습니다! 최고예요! 🏆');
+                        }
+                    }
+                    updateStats();
+                    generateQuestion();
+                }
+            } else { 
+                hasMadeMistakeOnCurrentQuestion = true; 
+                updateStats();
 
-이 두 가지 문제를 한 번에 해결할 수 있는 CSS 핵심 속성을 정리해 드릴게요.
+                if (inputKeyEl) {
+                    inputKeyEl.classList.remove('correct', 'target-note'); 
+                    inputKeyEl.classList.add('incorrect'); 
+                }
+                
+                if (currentLevel >= 3) {
+                    targetNotes.forEach(tn => {
+                        const targetKeyEl = document.querySelector(`[data-note="${tn}"]`);
+                        if (targetKeyEl) {
+                            targetKeyEl.classList.add('target-note'); 
+                        }
+                    });
+                }
 
-### 1. 세로 모드에서 가로 스크롤 활성화하기
-건반들을 감싸고 있는 **부모 컨테이너**에 가로 스크롤을 허용하는 속성을 추가해야 합니다.
+                const answerNames = targetNotes.map(n => n.split('/')[0].toUpperCase());
+                showMessage(`오답! 정답은 [ ${answerNames.join(', ')} ] 입니다. 다시 시도해 보세요.`, true);
 
-*   **`overflow-x: auto;`**: 내용이 화면 너비를 넘칠 때 가로 스크롤을 생성합니다.
-*   **`white-space: nowrap;`**: 건반들이 공간이 부족하다고 줄바꿈되어 밑으로 떨어지지 않도록 막아줍니다.
+                setTimeout(() => {
+                    retryQuestion(); 
+                    showMessage('다시 시도해주세요.', true); 
+                }, 2500);
+            }
+        }
 
-### 2. 건반 크기 잘림 (축소) 방지하기
-Flexbox 등을 사용할 때 화면이 좁아지면 자식 요소들의 크기가 강제로 줄어들면서 짤리는 현상이 발생할 수 있습니다. 이를 막으려면 **건반 개별 요소**에 속성을 추가해야 합니다.
+        function retryQuestion() {
+            currentInputIndex = 0; 
+            hasMadeMistakeOnCurrentQuestion = false; 
+            clearAllKeyFeedback(); 
+            clearMessage(); 
 
-*   **`flex-shrink: 0;`**: 부모 공간이 좁아져도 건반이 쪼그라들지 않고 설정한 원래 크기를 유지하게 합니다.
-*   **`box-sizing: border-box;`**: 테두리(border)나 패딩(padding) 때문에 예상했던 것보다 건반 크기가 더 커지는 것을 방지합니다.
+            let vexNotesToRedraw;
+            if (currentLevel >= 4) { 
+                vexNotesToRedraw = [createVexNote(targetNotes)];
+            } else { 
+                vexNotesToRedraw = targetNotes.map(n => createVexNote([n]));
+            }
+            drawStaff(vexNotesToRedraw);
+            showMessage('문제를 다시 시작합니다!', false);
+        }
 
----
+        function startGame() {
+            Tone.start();
+            
+            currentHand = document.getElementById('hand-select').value;
+            currentLevel = parseInt(document.getElementById('level-select').value); 
+            score = 0;
+            updateStats();
+            buildPiano();
+            generateQuestion(); 
+            showMessage('게임을 시작합니다!', false);
+        }
 
-**적용 예시 코드**
+        window.addEventListener('resize', () => {
+            if(targetNotes.length > 0) retryQuestion();
+        });
 
-```css
-/* 건반들을 감싸는 부모 박스 */
-.keyboard-container {
-    display: flex;
-    overflow-x: auto;  /* 가로 스크롤 활성화 */
-    width: 100%;       /* 화면에 꽉 차게 설정 */
-    
-    /* (선택) 스크롤바를 숨기고 싶을 때 */
-    -ms-overflow-style: none; 
-    scrollbar-width: none; 
-}
-
-.keyboard-container::-webkit-scrollbar {
-    display: none; /* 크롬, 사파리 등에서 스크롤바 숨김 */
-}
-
-/* 개별 건반 요소 */
-.key {
-    flex-shrink: 0;         /* 좁은 화면에서도 건반 크기 유지 */
-    width: 60px;            /* 설정하고자 하는 건반 너비 */
-    box-sizing: border-box; /* 크기 계산 오류 방지 */
-}
+        startGame();
+    </script>
+</body>
+</html>
